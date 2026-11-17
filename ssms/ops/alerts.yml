@@ -1,0 +1,43 @@
+# NFR-13 alerts. Thresholds are the design's; tune after the first month of real traffic.
+groups:
+  - name: ssms
+    rules:
+      - alert: SsmsHigh5xxRate
+        expr: |
+          sum(rate(ssms_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(ssms_http_requests_total[5m])), 1) > 0.01
+        for: 5m
+        labels: { severity: page }
+        annotations: { summary: "More than 1 % of API requests fail (5xx)" }
+
+      - alert: SsmsSlowReads
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(ssms_http_request_seconds_bucket{method="GET"}[10m]))) > 0.3
+        for: 10m
+        labels: { severity: ticket }
+        annotations: { summary: "GET p95 above 300 ms (NFR-03)" }
+
+      - alert: SsmsSlowPaymentCallbacks
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(ssms_http_request_seconds_bucket{route=~"/webhooks/.*"}[5m]))) > 2
+        for: 5m
+        labels: { severity: page }
+        annotations: { summary: "Payment callbacks slower than 2 s: providers will retry or give up" }
+
+      - alert: SsmsCeleryBacklog
+        expr: max(redis_key_size{key="celery"}) > 1000
+        for: 10m
+        labels: { severity: page }
+        annotations: { summary: "More than 1,000 queued background tasks (SMS, payments, reports)" }
+
+      - alert: SsmsApiDown
+        expr: up{job="ssms-api"} == 0
+        for: 2m
+        labels: { severity: page }
+        annotations: { summary: "API not answering /metrics" }
+
+      - alert: SsmsDiskFilling
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 15m
+        labels: { severity: ticket }
+        annotations: { summary: "Less than 15 % disk left (database, uploads, backups)" }

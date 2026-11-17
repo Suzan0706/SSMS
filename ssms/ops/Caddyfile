@@ -1,0 +1,24 @@
+# HTTPS edge for a single-server install (docker compose --profile edge). Caddy obtains and renews the
+# certificate for SSMS_DOMAIN itself (Let's Encrypt; ports 80 and 443 must reach this host).
+# SSMS_TLS is the contact email for the certificate (default: SSMS_ACME_EMAIL), or "internal" to use Caddy's own
+# certificate authority instead (test installs without a public name).
+
+{$SSMS_DOMAIN} {
+	tls {$SSMS_TLS}
+	encode gzip
+
+	# Never public: metrics and anything that is not the app.
+	@private path /metrics /metrics/*
+	respond @private 404
+
+	# Payment and SMS callbacks: restrict to the providers' address ranges here when they are known (VERIFY).
+	reverse_proxy web:8080 {
+		header_up X-Forwarded-Proto https
+	}
+
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	log {
+		output stdout
+		format json
+	}
+}

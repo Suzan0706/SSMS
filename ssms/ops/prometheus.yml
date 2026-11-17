@@ -1,0 +1,20 @@
+# Sample scrape configuration (Prometheus runs next to the stack, on the same private network).
+# /metrics is not proxied by the web container; scrape the API containers directly. Set the same bearer token as
+# SSMS_METRICS_TOKEN when one is configured. Redis and PostgreSQL exporters give queue length and database health.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+rule_files: [alerts.yml]
+
+scrape_configs:
+  - job_name: ssms-api
+    metrics_path: /metrics
+    authorization: { credentials_file: /etc/prometheus/ssms-metrics-token }
+    static_configs: [{ targets: ["api:8000"] }]
+  - job_name: redis
+    static_configs: [{ targets: ["redis-exporter:9121"] }]
+  - job_name: postgres
+    static_configs: [{ targets: ["postgres-exporter:9187"] }]
+  - job_name: node
+    static_configs: [{ targets: ["node-exporter:9100"] }]

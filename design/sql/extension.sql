@@ -1,0 +1,11 @@
+-- Phase 2 design of the extension tables (design/20 §20.2). Every part has been built as a migration and removed
+-- from here; the migrations are the source of truth:
+--   0011_files            stored_files
+--   0012_roles_extension  receptionist role, 18 permissions
+--   0013_front_office     admission_inquiries, school_events, staff_attendance, leave_types, leave_requests
+--   0014_teaching         study_materials, homework and their stream links, homework_submissions
+--                         (period_attendance dropped: attendance_sessions of kind LESSON already hold it)
+--   0015_exams_extension  exam_candidates
+--   0016_accounts         finance_categories, cash_entries, fine_rules, journal sources CASH_ENTRY/CASH_REVERSE
+--   0017_library          library_categories, library_publishers, library_cards
+--   0018_documents_email  certificate_templates, certificates, identity_cards, email_messages, staff.photo_file_key

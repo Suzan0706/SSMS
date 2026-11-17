@@ -1,0 +1,9 @@
+# The API image is built with the whole project as its context (it needs design/sql/schema.sql).
+# Allowlist: only what api/Dockerfile copies may reach the build. Never .env files, backups or the v1 project.
+*
+!ssms/api/pyproject.toml
+!ssms/api/alembic.ini
+!ssms/api/migrations
+!ssms/api/app
+!design/sql/schema.sql
+**/__pycache__

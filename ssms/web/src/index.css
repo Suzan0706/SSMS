@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-slate-50 font-sans text-slate-900;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme("colors.brand.500");
+    outline-offset: 2px;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: theme("colors.brand.500");
+    width: 1rem;
+    height: 1rem;
+    vertical-align: -0.15em;
+  }
+
+  /* Every table in the system: quiet header, comfortable rows, aligned numbers. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+  thead th {
+    @apply whitespace-nowrap border-b border-slate-200 pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500;
+  }
+  tbody tr {
+    transition: background-color 120ms ease;
+  }
+  tbody tr:hover {
+    background: theme("colors.slate.50");
+  }
+  tbody td {
+    vertical-align: middle;
+  }
+
+  /* A list with nothing in it says so, instead of showing only its header. */
+  tbody:empty {
+    display: table-caption;
+    caption-side: bottom;
+  }
+  tbody:empty::after {
+    @apply block py-10 text-center text-sm text-slate-500;
+    content: "Hakuna taarifa bado";
+  }
+  html[lang="en"] tbody:empty::after {
+    content: "Nothing here yet";
+  }
+}
+
+@layer components {
+  .control {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition;
+    @apply placeholder:text-slate-400 hover:border-slate-400;
+    @apply focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100;
+    @apply disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500;
+  }
+  select.control {
+    appearance: none;
+    padding-right: 2.25rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2364748b' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    background-size: 1.1rem;
+  }
+
+  /* Woven pattern for the dark panels, drawn from a kitenge border. */
+  .pattern-weave {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48' fill='none' stroke='%23ffffff' stroke-opacity='.07' stroke-width='1.5'%3E%3Cpath d='M0 24 24 0l24 24-24 24z'/%3E%3Cpath d='M12 24 24 12l12 12-12 12z'/%3E%3C/svg%3E");
+  }
+
+  .page-enter {
+    animation: page-enter 220ms ease-out;
+  }
+  @keyframes page-enter {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Phones: controls large enough for a thumb, and no zoom on focus. */
+@media (max-width: 640px) {
+  .control {
+    font-size: 1rem;
+    min-height: 2.75rem;
+  }
+}
+
+/* Paper: no menus or buttons, black on white, tables with ruled cells, rows never split across pages. */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  body {
+    background: #fff !important;
+    color: #000;
+    font-size: 11pt;
+  }
+  button,
+  [role="search"] {
+    display: none !important;
+  }
+  /* Filled-in fields print as their value, without the box. */
+  .control {
+    border: 0 !important;
+    box-shadow: none !important;
+    background: none !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+  section {
+    box-shadow: none !important;
+    border-color: #999 !important;
+    break-inside: avoid-page;
+  }
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  th,
+  td {
+    border: 1px solid #888;
+    padding: 4px 6px !important;
+  }
+  thead th {
+    color: #000;
+    background: #eee !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  tr {
+    break-inside: avoid;
+  }
+  tr[hidden] {
+    display: none;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

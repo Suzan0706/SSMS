@@ -1,0 +1,290 @@
+# SSMS single-server stack (design/18). Copy .env.example to .env and fill every secret first
+# (ops/gen-secrets.sh writes new random ones), then:
+#   docker compose -f ssms/docker-compose.yml --env-file ssms/.env --profile edge --profile antivirus up -d --build
+# Profiles (optional services):
+#   edge       Caddy: HTTPS on 80/443 with automatic certificates (SSMS_DOMAIN). Without it, put TLS in front of :8080.
+#   antivirus  ClamAV: uploads are scanned (set SSMS_CLAMAV_ADDRESS=clamav:3310). Needs about 1.5 GB of memory.
+#   objects    SeaweedFS: S3-compatible file store (set SSMS_STORAGE_BACKEND=s3). Or point SSMS_S3_* at a cloud store.
+#   offsite    rclone: encrypted daily copy of the dumps and uploaded files to another S3 store (SSMS_OFFSITE_*).
+#   demo       seed: demo data only (fake ciphertexts) — never on a real installation.
+name: ssms
+
+x-logging: &logging              # keep container logs from filling the disk; ship them to the log store (design/18.7)
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
+
+x-api-env: &api-env
+  SSMS_ENVIRONMENT: ${SSMS_ENVIRONMENT:-production}
+  SSMS_DATABASE_URL: postgresql+psycopg://ssms_app:${SSMS_APP_DB_PASSWORD}@db:5432/ssms
+  SSMS_PLATFORM_DATABASE_URL: postgresql+psycopg://ssms_console:${SSMS_CONSOLE_DB_PASSWORD}@db:5432/ssms
+  SSMS_PLATFORM_DATABASE_SET_ROLE: ssms_platform
+  SSMS_REDIS_URL: redis://redis:6379/1
+  SSMS_CELERY_BROKER_URL: redis://redis:6379/0
+  SSMS_JWT_SECRET: ${SSMS_JWT_SECRET}
+  SSMS_ENC_KEYS: ${SSMS_ENC_KEYS}
+  SSMS_ENC_ACTIVE_KEY_ID: ${SSMS_ENC_ACTIVE_KEY_ID:-1}
+  SSMS_BLIND_INDEX_KEY: ${SSMS_BLIND_INDEX_KEY}
+  SSMS_COOKIE_SECURE: ${SSMS_COOKIE_SECURE:-true}
+  SSMS_CORS_ORIGINS: ${SSMS_CORS_ORIGINS:-["https://app.ssms.co.tz"]}
+  SSMS_SMS_PROVIDER: ${SSMS_SMS_PROVIDER:-beem}
+  SSMS_BEEM_API_KEY: ${SSMS_BEEM_API_KEY:-}
+  SSMS_BEEM_SECRET_KEY: ${SSMS_BEEM_SECRET_KEY:-}
+  SSMS_NEXTSMS_USERNAME: ${SSMS_NEXTSMS_USERNAME:-}
+  SSMS_NEXTSMS_PASSWORD: ${SSMS_NEXTSMS_PASSWORD:-}
+  SSMS_SMS_DEFAULT_SENDER: ${SSMS_SMS_DEFAULT_SENDER:-SSMS}
+  SSMS_SMS_WEBHOOK_SECRET: ${SSMS_SMS_WEBHOOK_SECRET}
+  SSMS_EMAIL_PROVIDER: ${SSMS_EMAIL_PROVIDER:-console}
+  SSMS_EMAIL_FROM: ${SSMS_EMAIL_FROM:-no-reply@ssms.co.tz}
+  SSMS_SMTP_HOST: ${SSMS_SMTP_HOST:-}
+  SSMS_SMTP_PORT: ${SSMS_SMTP_PORT:-587}
+  SSMS_SMTP_USER: ${SSMS_SMTP_USER:-}
+  SSMS_SMTP_PASSWORD: ${SSMS_SMTP_PASSWORD:-}
+  SSMS_SMTP_STARTTLS: ${SSMS_SMTP_STARTTLS:-true}
+  SSMS_SMTP_IMPLICIT_TLS: ${SSMS_SMTP_IMPLICIT_TLS:-false}
+  SSMS_SMTP_CA_FILE: ${SSMS_SMTP_CA_FILE:-}
+  SSMS_GEPG_MODE: ${SSMS_GEPG_MODE:-live}
+  SSMS_GEPG_URL: ${SSMS_GEPG_URL:-}
+  SSMS_GEPG_PRIVATE_KEY: ${SSMS_GEPG_PRIVATE_KEY:-}
+  SSMS_GEPG_PUBLIC_KEY: ${SSMS_GEPG_PUBLIC_KEY:-}
+  SSMS_GEPG_BILL_DAYS: ${SSMS_GEPG_BILL_DAYS:-30}
+  SSMS_MOBILE_WEBHOOK_SECRET: ${SSMS_MOBILE_WEBHOOK_SECRET}
+  SSMS_PUSH_PROVIDER: ${SSMS_PUSH_PROVIDER:-console}
+  SSMS_WEBHOOK_REQUESTS_PER_MINUTE: ${SSMS_WEBHOOK_REQUESTS_PER_MINUTE:-6000}
+  SSMS_SENTRY_DSN: ${SSMS_SENTRY_DSN:-}
+  SSMS_SENTRY_TRACES_SAMPLE_RATE: ${SSMS_SENTRY_TRACES_SAMPLE_RATE:-0}
+  SSMS_METRICS_TOKEN: ${SSMS_METRICS_TOKEN:-}
+  SSMS_LOG_FORMAT: ${SSMS_LOG_FORMAT:-json}
+  SSMS_STORAGE_DIR: /data
+  SSMS_STORAGE_BACKEND: ${SSMS_STORAGE_BACKEND:-local}
+  SSMS_S3_ENDPOINT_URL: ${SSMS_S3_ENDPOINT_URL:-}
+  SSMS_S3_BUCKET: ${SSMS_S3_BUCKET:-}
+  SSMS_S3_REGION: ${SSMS_S3_REGION:-us-east-1}
+  SSMS_S3_ACCESS_KEY: ${SSMS_S3_ACCESS_KEY:-}
+  SSMS_S3_SECRET_KEY: ${SSMS_S3_SECRET_KEY:-}
+  SSMS_CLAMAV_ADDRESS: ${SSMS_CLAMAV_ADDRESS:-}
+  SSMS_ALLOW_UNSCANNED_UPLOADS: ${SSMS_ALLOW_UNSCANNED_UPLOADS:-false}
+
+services:
+  db:
+    image: postgres:16.9-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_DB: ssms
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ssms"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    logging: *logging
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+
+  migrate:                        # one-shot: schema + migrations as the superuser, then the runtime logins
+    build: { context: .., dockerfile: ssms/api/Dockerfile }
+    image: ssms-api
+    logging: *logging
+    environment:
+      SSMS_MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD}@db:5432/ssms
+      SSMS_APP_DB_PASSWORD: ${SSMS_APP_DB_PASSWORD}
+      SSMS_CONSOLE_DB_PASSWORD: ${SSMS_CONSOLE_DB_PASSWORD}
+      SSMS_ENVIRONMENT: migration
+    command: ["sh", "-c", "alembic upgrade head && python -m app.cli db-logins"]
+    healthcheck: { disable: true }  # runs once and exits; the image's HTTP check does not apply
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    image: ssms-api
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      <<: *api-env
+      FORWARDED_ALLOW_IPS: "*"                      # only reachable through web, which sends exactly one address
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+      PROMETHEUS_MULTIPROC_DIR: /tmp/metrics         # /metrics adds up every worker
+    command: ["sh", "-c", "rm -rf /tmp/metrics && mkdir -p /tmp/metrics && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers $${WEB_CONCURRENCY} --proxy-headers --forwarded-allow-ips '*'"]
+    volumes: [files:/data]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    image: ssms-api
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      <<: *api-env
+      CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-4}
+    command: ["sh", "-c", "exec celery -A app.tasks.worker worker --loglevel info --concurrency $${CELERY_CONCURRENCY:-4}"]
+    healthcheck:                  # the worker answers a ping through the broker (the image's HTTP check does not apply)
+      test: ["CMD-SHELL", "celery -A app.tasks.worker inspect ping --destination celery@$$HOSTNAME --timeout 10 >/dev/null"]
+      interval: 60s
+      timeout: 20s
+      start_period: 30s
+      retries: 3
+    volumes: [files:/data]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  beat:                           # schedules: absence alerts (every 5 min), fee reminders 09:00, library 10:00 (EAT)
+    image: ssms-api
+    restart: unless-stopped
+    logging: *logging
+    environment: *api-env
+    command: ["celery", "-A", "app.tasks.worker", "beat", "--loglevel", "info", "--schedule", "/tmp/celerybeat-schedule"]
+    healthcheck: { disable: true }  # beat is the container's only process: if it stops, the container stops and restarts
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  backup:                         # one logical backup per calendar day, kept 14 days; copy off the server (design/18.5)
+    image: postgres:16.9-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Africa/Dar_es_Salaam
+    volumes: [backups:/backups]
+    entrypoint: ["sh", "-c"]
+    # Checks the clock every 10 minutes instead of sleeping 24 h, so a restart or a paused host never skips a day.
+    # A dump is written under a temporary name and renamed only when complete, and never before the schema exists
+    # (on a first install it would otherwise keep an empty database as the day's backup).
+    command:
+      - >-
+        while true; do
+        day=$$(date +%Y%m%d);
+        if ! psql -h db -U postgres -d ssms -Atc 'SELECT 1 FROM alembic_version' >/dev/null 2>&1; then
+        echo "no schema yet: backup waits";
+        elif ! ls /backups/ssms-$$day-*.dump >/dev/null 2>&1; then
+        name=/backups/ssms-$$day-$$(date +%H%M).dump;
+        if pg_dump -h db -U postgres -d ssms -Fc -f $$name.part; then mv $$name.part $$name; echo "backup $$name";
+        else rm -f $$name.part; echo "backup FAILED" >&2; fi;
+        find /backups -name 'ssms-*.dump' -mtime +14 -delete;
+        fi;
+        sleep 600; done
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    build: { context: ./web }
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      SSMS_TRUSTED_PROXY: ${SSMS_TRUSTED_PROXY:-172.31.250.10}   # the only address whose X-Forwarded-For counts
+    ports: ["${SSMS_WEB_BIND:-0.0.0.0}:${SSMS_WEB_PORT:-8080}:8080"]
+    networks: [default, edge]
+    healthcheck:
+      # through to the API: "healthy" means the site works, not only that the static files are served
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health/live || exit 1"]
+      interval: 30s
+      timeout: 5s
+    depends_on: [api]
+
+  edge:                           # HTTPS (profile edge): set SSMS_DOMAIN and SSMS_ACME_EMAIL; bind web to 127.0.0.1
+    image: caddy:2.10.2-alpine
+    profiles: [edge]
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      SSMS_DOMAIN: ${SSMS_DOMAIN:-localhost}
+      SSMS_TLS: ${SSMS_TLS:-${SSMS_ACME_EMAIL:-internal}}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data          # certificates: keep this volume
+    networks:
+      edge: { ipv4_address: "${SSMS_TRUSTED_PROXY:-172.31.250.10}" }
+    depends_on: [web]
+
+  clamav:                         # virus scanner (profile antivirus); signatures update themselves (freshclam)
+    image: clamav/clamav:1.4.3
+    profiles: [antivirus]
+    restart: unless-stopped
+    logging: *logging
+    volumes: [clamav-db:/var/lib/clamav]
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 60s
+      start_period: 300s          # the first signature download takes a few minutes
+
+  objects:                        # S3-compatible file store (profile objects); keys from SSMS_S3_ACCESS_KEY/SECRET_KEY
+    image: chrislusf/seaweedfs:4.48
+    profiles: [objects]
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      SSMS_S3_ACCESS_KEY: ${SSMS_S3_ACCESS_KEY:-}
+      SSMS_S3_SECRET_KEY: ${SSMS_S3_SECRET_KEY:-}
+    entrypoint: ["sh", "/ops/objects-start.sh"]
+    volumes:
+      - ./ops/objects-start.sh:/ops/objects-start.sh:ro
+      - objects-data:/data
+
+  offsite:                        # encrypted daily copies off this server (profile offsite); design/18.5
+    image: rclone/rclone:1.75.2
+    profiles: [offsite]
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      TZ: Africa/Dar_es_Salaam
+      SSMS_OFFSITE_S3_ENDPOINT_URL: ${SSMS_OFFSITE_S3_ENDPOINT_URL:-}
+      SSMS_OFFSITE_S3_REGION: ${SSMS_OFFSITE_S3_REGION:-us-east-1}
+      SSMS_OFFSITE_S3_BUCKET: ${SSMS_OFFSITE_S3_BUCKET:-}
+      SSMS_OFFSITE_S3_ACCESS_KEY: ${SSMS_OFFSITE_S3_ACCESS_KEY:-}
+      SSMS_OFFSITE_S3_SECRET_KEY: ${SSMS_OFFSITE_S3_SECRET_KEY:-}
+      SSMS_OFFSITE_PASSPHRASE: ${SSMS_OFFSITE_PASSPHRASE:-}
+      SSMS_OFFSITE_SALT: ${SSMS_OFFSITE_SALT:-}
+      SSMS_STORAGE_BACKEND: ${SSMS_STORAGE_BACKEND:-local}
+      SSMS_S3_ENDPOINT_URL: ${SSMS_S3_ENDPOINT_URL:-}
+      SSMS_S3_BUCKET: ${SSMS_S3_BUCKET:-}
+      SSMS_S3_REGION: ${SSMS_S3_REGION:-us-east-1}
+      SSMS_S3_ACCESS_KEY: ${SSMS_S3_ACCESS_KEY:-}
+      SSMS_S3_SECRET_KEY: ${SSMS_S3_SECRET_KEY:-}
+    entrypoint: ["sh", "/ops/offsite.sh"]
+    command: ["run"]
+    volumes:
+      - ./ops/offsite.sh:/ops/offsite.sh:ro
+      - backups:/backups:ro
+      - files:/data:ro
+      - offsite-state:/state
+    healthcheck:                  # healthy = a verified copy within the last 26 hours
+      test: ["CMD-SHELL", "test -f /state/last-ok && [ $$(( $$(date +%s) - $$(date -r /state/last-ok +%s) )) -lt 93600 ]"]
+      interval: 10m
+      start_period: 1h
+    depends_on: [backup]
+
+  seed:                           # demo data only (fake ciphertexts): never on a real deployment
+    image: postgres:16.9-alpine
+    profiles: [demo]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [../design/sql:/sql:ro]
+    command: ["psql", "-h", "db", "-U", "postgres", "-d", "ssms", "-v", "ON_ERROR_STOP=1", "-f", "/sql/seed.sql"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+networks:
+  edge:                           # fixed addresses, so nginx can trust exactly one proxy (web/nginx.conf)
+    ipam:
+      config: [{ subnet: "${SSMS_EDGE_SUBNET:-172.31.250.0/24}" }]   # change both if it clashes with a local network
+
+volumes:
+  db-data:
+  files:
+  backups:
+  caddy-data:
+  clamav-db:
+  objects-data:
+  offsite-state:

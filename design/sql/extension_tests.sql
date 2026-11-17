@@ -1,0 +1,6 @@
+-- The tests that were drafted here for design/sql/extension.sql (Phase 2) now run with the migrated tables, as the
+-- runtime role, from design/sql/tests/:
+--   03_roles.sql (R01-R03, migration 0012)      04_front_office.sql (X02-X05, 0013)   05_teaching.sql (X09, 0014)
+--   06_exams.sql (X06, 0015)                    07_accounts.sql (X07, 0016)           08_library.sql (L01-L02, 0017)
+--   09_documents.sql (X08, X10, 0018)
+-- X01 (RLS forced on every new table) is covered for all tables by tests/01_isolation.sql I02.
