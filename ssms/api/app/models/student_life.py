@@ -3,7 +3,6 @@
 
 import uuid
 from datetime import date, datetime
-
 from decimal import Decimal
 
 from sqlalchemy import Boolean, DateTime, Integer, LargeBinary, Numeric, SmallInteger, String

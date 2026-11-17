@@ -555,3 +555,19 @@ username and password sign-in. Test `e2e/rolecards.spec.ts` (8): every card land
 mismatch notice; passed on a fresh seed and on the local stack through nginx. Full browser suite 53: 52 passed in the
 run where one new test failed on a test mistake (an English-speaking teacher account); that test was fixed and the
 role-card file re-run (8/8). pytest 285 passed (4 live tests skipped: test servers off). Cache v15.
+**Own database on Windows; library copies connected (2026-11-17).** Asked to connect the app to a database made in
+pgAdmin (`smart_school_db`, PostgreSQL 18 on Windows) so everything is recorded there without losing data, and to fix
+parts that did not work together. Added `ssms/api/scripts/setup_database.py` (refuses a database holding another
+program's tables, pg_dump backup before upgrading existing SSMS data, `.env` secrets written once and kept, migrations,
+`db-logins`, check as `ssms_app`), `scripts/run_api.py` (selector loop for Windows), `ssms/windows/setup.bat` and
+`start.bat`, and `ssms/CONNECT-DATABASE.md`; the root README now points to `ssms/` (the `backend/`, `db/`, `docs/`
+version 1 has a different schema). Found by the full suite and a frontend-to-route cross-check (every web call
+matches a route): migration 0019 added library copies but the API still lent by book, so books added later had no
+copies, new loans no copy, and a loan's copy could belong to another book (`test_normalisation` failed). Migration
+0020 adds the composite key (copy of the loan's book), keeps copies in step with a book's count (surplus marked
+WITHDRAWN, never deleted), gives each new loan a free copy, and back-fills: on the seeded database the book went from
+0 copies to 3 and its loan got a copy, other counts unchanged. Tests `test_library_copies.py` (3). Results on
+PostgreSQL 16.15 (18 not installable here; schema checked for 18 differences, none found): pytest all passed
+(4 live tests skipped), web typecheck and build clean; setup script run on an empty, a foreign and an existing
+database; API started with the written `.env`, sign-in, book and loan through the API and the web proxy, rows
+checked in the database.

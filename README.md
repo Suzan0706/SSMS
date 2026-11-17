@@ -1,6 +1,13 @@
 
 # SSMS
 
+> **The app to run is in [`ssms/`](ssms/README.md)** (API + web, schema in [`design/sql`](design/sql) applied by
+> migrations). To connect it to your own PostgreSQL database (e.g. `smart_school_db` in pgAdmin) see
+> **[ssms/CONNECT-DATABASE.md](ssms/CONNECT-DATABASE.md)**.
+>
+> Everything below describes **version 1** (`backend/`, `db/`, `docs/`): an earlier single-school design kept for
+> reference. Its schema is different and is not used by the app; do not load `db/schema.sql` into the SSMS database.
+
 # School Management System (SMS) — System Design
 
 Design and reference implementation of a School Management System for a Tanzanian school. It uses FastAPI and PostgreSQL 16, with Kiswahili/English, NECTA grading, TZS, GePG and mobile money.

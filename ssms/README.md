@@ -95,7 +95,10 @@ gives `ssms_app` its password and creates the console login `ssms_console`. The 
 
 ## Develop without Docker
 
-Requirements: Python 3.12+, Node 20+, PostgreSQL 16.
+Requirements: Python 3.12+, Node 20+, PostgreSQL 16 or newer.
+
+**Windows with pgAdmin, existing database (e.g. `smart_school_db`):** run `windows\setup.bat`, then
+`windows\start.bat` — see [CONNECT-DATABASE.md](CONNECT-DATABASE.md). The manual steps are below.
 
 ```bash
 cd ssms/api
@@ -124,6 +127,8 @@ import asyncio, uvicorn
 server = uvicorn.Server(uvicorn.Config("app.main:app", port=8000, loop="none"))
 asyncio.run(server.serve(), loop_factory=asyncio.SelectorEventLoop)
 ```
+
+`python scripts/run_api.py` does exactly this on any system.
 
 ## Tests
 

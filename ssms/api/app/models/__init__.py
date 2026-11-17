@@ -108,11 +108,11 @@ from app.models.student_life import (
     HealthRecord,
     LibraryBook,
     LibraryCard,
-    LibraryCopy,
     LibraryCategory,
+    LibraryCopy,
     LibraryLoan,
-    LibrarySettings,
     LibraryPublisher,
+    LibrarySettings,
     StudentActivity,
 )
 from app.models.system import (
